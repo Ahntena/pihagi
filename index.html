@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>캐릭터 피하기 인터랙션</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+
+  body{
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    background:#0f172a;
+    color:#e5e7eb;
+    height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+  }
+
+  .game-area{
+    position:relative;
+    width:360px;
+    height:520px;
+    background:radial-gradient(circle at top,#0ea5e9 0,#020617 55%,#020617 100%);
+    border-radius:24px;
+    box-shadow:0 20px 40px rgba(0,0,0,.4);
+    overflow:hidden;
+  }
+  .game-area::before{
+    content:"";
+    position:absolute;inset:0;
+    background-image:
+      linear-gradient(120deg,rgba(148,163,184,.08) 1px,transparent 1px),
+      linear-gradient(210deg,rgba(148,163,184,.08) 1px,transparent 1px);
+    background-size:40px 40px;
+    pointer-events:none;
+  }
+
+  .info{
+    position:absolute;
+    top:12px;left:16px;right:16px;
+    font-size:12px;
+    display:flex;
+    justify-content:space-between;
+    color:#cbd5f5;
+    z-index:3;
+  }
+
+  .hint{
+    position:absolute;
+    left:16px;right:16px;bottom:16px;
+    font-size:11px;
+    color:#9ca3af;
+    text-align:center;
+    z-index:3;
+  }
+
+  /* ===== 캐릭터 ===== */
+  .character{
+    position:absolute;
+    bottom:40px;
+    left:50%;
+    width:80px;
+    height:160px;
+    transform:translate(-50%,0);
+    z-index:2;
+  }
+
+  .character .lower-body{
+    position:absolute;
+    bottom:0;
+    left:50%;
+    width:36px;
+    height:80px;
+    transform:translateX(-50%);
+    border-radius:18px 18px 24px 24px;
+    background:linear-gradient(180deg,#f97316,#ea580c);
+  }
+
+  .character .upper-body{
+    position:absolute;
+    bottom:70px;           /* 허리 위치 */
+    left:50%;
+    width:52px;
+    height:90px;
+    transform:translateX(-50%);
+    transform-origin:50% 100%; /* 허리 기준 회전 */
+  }
+
+  .character .upper-body::before{
+    content:"";
+    position:absolute;
+    bottom:0;
+    left:50%;
+    width:52px;
+    height:70px;
+    transform:translateX(-50%);
+    border-radius:26px;
+    background:linear-gradient(180deg,#fde68a,#facc15);
+    box-shadow:0 8px 16px rgba(0,0,0,.4);
+  }
+
+  .character .head{
+    position:absolute;
+    bottom:58px;
+    left:50%;
+    width:60px;
+    height:60px;
+    transform:translateX(-50%);
+    border-radius:50%;
+    background:radial-gradient(circle at 30% 30%,#fecaca,#fb7185);
+    box-shadow:0 10px 12px rgba(0,0,0,.35);
+  }
+
+  .shadow{
+    position:absolute;
+    bottom:20px;
+    left:50%;
+    width:110px;
+    height:20px;
+    transform:translateX(-50%);
+    background:radial-gradient(ellipse at center,rgba(15,23,42,.8),transparent 70%);
+    z-index:1;
+  }
+
+  /* ===== 드래그 오브젝트 ===== */
+  .projectile{
+    position:absolute;
+    width:48px;
+    height:48px;
+    border-radius:999px;
+    background:radial-gradient(circle at 30% 30%,#e5e7eb,#6b7280);
+    border:2px solid rgba(15,23,42,.8);
+    box-shadow:0 8px 18px rgba(0,0,0,.5);
+    cursor:grab;
+    touch-action:none;
+    z-index:4;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:11px;
+    color:#020617;
+    font-weight:600;
+    user-select:none;
+  }
+  .projectile:active{cursor:grabbing;}
+
+  /* ===== 사이드 회피(몸통 노릴 때) ===== */
+  @keyframes char-shift-right{
+    0%  {transform:translate(-50%,0);}
+    30% {transform:translate(-15%,0);}
+    100%{transform:translate(-50%,0);}
+  }
+  @keyframes char-shift-left{
+    0%  {transform:translate(-50%,0);}
+    30% {transform:translate(-85%,0);}
+    100%{transform:translate(-50%,0);}
+  }
+  @keyframes upper-dodge-right{
+    0%  {transform:translateX(-50%) rotate(0deg);}
+    30% {transform:translateX(-40%) rotate(-55deg);}
+    55% {transform:translateX(-45%) rotate(-50deg);}
+    100%{transform:translateX(-50%) rotate(0deg);}
+  }
+  @keyframes upper-dodge-left{
+    0%  {transform:translateX(-50%) rotate(0deg);}
+    30% {transform:translateX(-60%) rotate(55deg);}
+    55% {transform:translateX(-55%) rotate(50deg);}
+    100%{transform:translateX(-50%) rotate(0deg);}
+  }
+
+  .dodge-right{
+    animation:char-shift-right .5s cubic-bezier(.34,.05,.41,1.32);
+  }
+  .dodge-left{
+    animation:char-shift-left .5s cubic-bezier(.34,.05,.41,1.32);
+  }
+  .dodge-right .upper-body{
+    animation:upper-dodge-right .5s cubic-bezier(.34,.05,.41,1.32);
+  }
+  .dodge-left .upper-body{
+    animation:upper-dodge-left .5s cubic-bezier(.34,.05,.41,1.32);
+  }
+
+  /* ===== 머리 노리면: 숙이기(허리 꺾기) ===== */
+  @keyframes char-duck{
+    0%  {transform:translate(-50%,0);}
+    35% {transform:translate(-50%,6px);}
+    100%{transform:translate(-50%,0);}
+  }
+  @keyframes upper-duck{
+    0%  {transform:translateX(-50%) rotate(0deg);}
+    35% {transform:translateX(-55%) rotate(75deg);}
+    60% {transform:translateX(-52%) rotate(60deg);}
+    100%{transform:translateX(-50%) rotate(0deg);}
+  }
+  .duck{
+    animation:char-duck .5s cubic-bezier(.34,.05,.41,1.32);
+  }
+  .duck .upper-body{
+    animation:upper-duck .5s cubic-bezier(.34,.05,.41,1.32);
+  }
+
+  /* ===== 다리 노리면: 점프 ===== */
+  @keyframes char-jump-right{
+    0%  {transform:translate(-50%,0);}
+    25% {transform:translate(-20%,-42px);}
+    50% {transform:translate(-15%,-54px);}
+    100%{transform:translate(-50%,0);}
+  }
+  @keyframes char-jump-left{
+    0%  {transform:translate(-50%,0);}
+    25% {transform:translate(-80%,-42px);}
+    50% {transform:translate(-75%,-54px);}
+    100%{transform:translate(-50%,0);}
+  }
+  .jump-right{
+    animation:char-jump-right .6s cubic-bezier(.25,.46,.45,.94);
+  }
+  .jump-left{
+    animation:char-jump-left .6s cubic-bezier(.25,.46,.45,.94);
+  }
+
+</style>
+</head>
+<body>
+<div class="game-area" id="game">
+  <div class="info">
+    <span>🖱️/☝️ 드래그해서 공격</span>
+    <span>머리·몸통·다리 반응 다름</span>
+  </div>
+
+  <div class="character" id="character">
+    <div class="lower-body"></div>
+    <div class="upper-body">
+      <div class="head"></div>
+    </div>
+  </div>
+  <div class="shadow"></div>
+
+  <div class="projectile" id="projectile">DRAG</div>
+
+  <div class="hint">
+    캐릭터 머리·배·다리 쪽으로 각각 끌어와 보세요 👀
+  </div>
+</div>
+
+<script>
+(function(){
+  const gameArea   = document.getElementById("game");
+  const character  = document.getElementById("character");
+  const projectile = document.getElementById("projectile");
+
+  let isDragging = false;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
+  let activePointerId = null;
+  let isDodging = false;
+
+  function resetProjectilePosition(){
+    const gameRect = gameArea.getBoundingClientRect();
+    const projRect = projectile.getBoundingClientRect();
+    const startX = gameRect.left + gameRect.width - projRect.width - 24;
+    const startY = gameRect.top + 40;
+    projectile.style.left = (startX - gameRect.left) + "px";
+    projectile.style.top  = (startY - gameRect.top) + "px";
+  }
+  resetProjectilePosition();
+  window.addEventListener("resize", resetProjectilePosition);
+
+  function pointerDown(e){
+    e.preventDefault();
+    const projRect = projectile.getBoundingClientRect();
+    isDragging = true;
+    activePointerId = e.pointerId;
+    dragOffsetX = e.clientX - projRect.left;
+    dragOffsetY = e.clientY - projRect.top;
+    projectile.setPointerCapture(activePointerId);
+  }
+
+  function pointerMove(e){
+    if(!isDragging || e.pointerId !== activePointerId) return;
+    const gameRect = gameArea.getBoundingClientRect();
+
+    let newLeft = e.clientX - dragOffsetX - gameRect.left;
+    let newTop  = e.clientY - dragOffsetY - gameRect.top;
+
+    const maxLeft = gameRect.width  - projectile.offsetWidth;
+    const maxTop  = gameRect.height - projectile.offsetHeight;
+    if(newLeft < 0) newLeft = 0;
+    if(newTop  < 0) newTop  = 0;
+    if(newLeft > maxLeft) newLeft = maxLeft;
+    if(newTop  > maxTop)  newTop  = maxTop;
+
+    projectile.style.left = newLeft + "px";
+    projectile.style.top  = newTop  + "px";
+
+    checkCollision();
+  }
+
+  function pointerUp(e){
+    if(e.pointerId !== activePointerId) return;
+    isDragging = false;
+    activePointerId = null;
+  }
+
+  projectile.addEventListener("pointerdown", pointerDown);
+  window.addEventListener("pointermove", pointerMove);
+  window.addEventListener("pointerup", pointerUp);
+  window.addEventListener("pointercancel", pointerUp);
+
+  function clearAllAnimations(){
+    character.classList.remove(
+      "dodge-left","dodge-right",
+      "duck",
+      "jump-left","jump-right"
+    );
+  }
+
+  function checkCollision(){
+    if(isDodging) return;
+
+    const projRect = projectile.getBoundingClientRect();
+    const charRect = character.getBoundingClientRect();
+
+    const overlap =
+      projRect.left   < charRect.right &&
+      projRect.right  > charRect.left  &&
+      projRect.top    < charRect.bottom &&
+      projRect.bottom > charRect.top;
+
+    if(overlap){
+      triggerReaction(projRect, charRect);
+    }
+  }
+
+  // 머리/몸통/다리 위치에 따라 다른 반응
+  function triggerReaction(projRect, charRect){
+    if(isDodging) return;
+    isDodging = true;
+
+    const projCenterX = projRect.left + projRect.width / 2;
+    const projCenterY = projRect.top  + projRect.height / 2;
+    const charCenterX = charRect.left + charRect.width / 2;
+
+    const topZone    = charRect.top + charRect.height * 0.3;      // 머리 쪽
+    const bottomZone = charRect.bottom - charRect.height * 0.3;   // 다리 쪽
+
+    let reaction = "side";
+    if(projCenterY < topZone){
+      reaction = "duck";          // 머리 근처 → 숙이기
+    }else if(projCenterY > bottomZone){
+      reaction = "jump";          // 다리 근처 → 점프
+    }else{
+      reaction = "side";          // 중간 → 좌우 회피
+    }
+
+    const fromDirection = projCenterX < charCenterX ? "left" : "right";
+
+    clearAllAnimations();
+
+    if(reaction === "duck"){
+      character.classList.add("duck");
+    }else if(reaction === "jump"){
+      if(fromDirection === "left"){
+        character.classList.add("jump-right");
+      }else{
+        character.classList.add("jump-left");
+      }
+    }else{ // side
+      if(fromDirection === "left"){
+        character.classList.add("dodge-right");
+      }else{
+        character.classList.add("dodge-left");
+      }
+    }
+
+    const handleEnd = () => {
+      clearAllAnimations();
+      character.removeEventListener("animationend", handleEnd);
+      isDodging = false;
+    };
+    character.addEventListener("animationend", handleEnd);
+  }
+})();
+</script>
+</body>
+</html>
